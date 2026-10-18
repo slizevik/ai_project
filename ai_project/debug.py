@@ -1,5 +1,9 @@
 def scale_values(values: list[float], factor: float) -> list[float]:
-    return [value * factor for value in values]
+    return [factor * value for value in values]
+
+
+def total_values(values: list[float]) -> float:
+    return sum(values)
 
 
 if __name__ == "__main__":
