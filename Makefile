@@ -1,4 +1,4 @@
-.PHONY: setup check s3-up s3-down ingest data
+.PHONY: setup check s3-up s3-down ingest data infra-up experiments infra-down
 
 setup:
 	uv sync --locked --all-groups
@@ -20,3 +20,13 @@ ingest:
 
 data:
 	uv run --locked python -m ai_project.pipeline
+
+infra-up:
+	docker compose build training
+	docker compose up -d rustfs s3-init postgres mlflow
+
+experiments:
+	docker compose --profile training run --rm -e CONFIG=$(or $(CONFIG),configs/grid.yaml) training
+
+infra-down:
+	docker compose down
