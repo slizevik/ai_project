@@ -97,3 +97,82 @@ uv run python -m ai_project.upload_processed --version v1
 ```
 
 Существующая processed-версия не перезаписывается. Для нового разбиения укажите другой seed или размер validation и новую версию.
+
+## Эксперименты
+
+Для трекинга используется локальный MLflow. PostgreSQL хранит метаданные запусков, RustFS хранит артефакты MLflow в bucket `mlflow`, а training-контейнер подключён к той же Docker-сети. Интерфейс MLflow доступен по адресу [http://localhost:5000](http://localhost:5000).
+
+### Запуск инфраструктуры
+
+```bash
+cp .env.example .env
+make infra-up
+```
+
+`make infra-up` собирает training-образ и запускает RustFS, PostgreSQL, init-контейнер bucket и MLflow. Credentials и настройки S3 берутся из `.env`.
+
+### Baseline
+
+Baseline — линейный классификатор над flattened RGB-пикселями. Для отдельного запуска используйте индекс `0`:
+
+```bash
+docker compose --profile training run --rm \
+  -e CONFIG=configs/grid.yaml \
+  -e GRID_INDEX=0 training
+```
+
+Конфигурация baseline находится в `configs/baseline.yaml`.
+
+### Grid
+
+Сетка задаётся в `configs/grid.yaml` и содержит 6 комбинаций:
+
+```yaml
+grid:
+  train.lr: [0.0003, 0.001, 0.003]
+  train.batch_size: [64, 128]
+```
+
+Полный запуск выполняет baseline и каждую комбинацию в отдельном одноразовом контейнере:
+
+```bash
+make experiments CONFIG=configs/grid.yaml
+```
+
+Для другого набора параметров достаточно изменить YAML-конфиг. Код обучения менять не нужно. Каждый запуск получает собственное имя и записывается в MLflow.
+
+### Модели в S3
+
+После запуска артефакты модели сохраняются в S3:
+
+```text
+models/<experiment_name>/<run_name>/
+├── model.pt
+├── config.yaml
+├── metrics.json
+└── confusion_matrix.png
+```
+
+`metrics.json` содержит лучшую эпоху, validation-метрики, test-метрики, seed, версию данных и git commit. Существующий run не перезаписывается; для явной замены требуется флаг `--allow-overwrite`.
+
+### Выбор конфигурации и результаты
+
+Test используется только для итогового замера уже выбранной модели. Конфигурация выбирается исключительно по минимальному `val_loss`; test-метрики не участвуют в выборе.
+
+После фактического запуска серии заполните таблицу значениями из MLflow и `metrics.json`:
+
+| Запуск | Модель | Learning rate | Batch size | Лучшая эпоха | Val loss | Val accuracy | Val macro-F1 | Test loss | Test accuracy | Test macro-F1 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| baseline | linear | 0.001 | 128 | — | — | — | — | — | — | — |
+| grid-1 | simple_cnn | 0.0003 | 64 | — | — | — | — | — | — | — |
+| grid-2 | simple_cnn | 0.0003 | 128 | — | — | — | — | — | — | — |
+| grid-3 | simple_cnn | 0.001 | 64 | — | — | — | — | — | — | — |
+| grid-4 | simple_cnn | 0.001 | 128 | — | — | — | — | — | — | — |
+| grid-5 | simple_cnn | 0.003 | 64 | — | — | — | — | — | — | — |
+| grid-6 | simple_cnn | 0.003 | 128 | — | — | — | — | — | — | — |
+
+В итоговом выводе укажите выбранную конфигурацию, её минимальный `val_loss`, сравнение с baseline и итоговые test-метрики. После экспериментов остановите инфраструктуру:
+
+```bash
+make infra-down
+```
