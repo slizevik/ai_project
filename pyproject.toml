@@ -58,6 +58,7 @@ extend-select = ["B", "E501", "I"]
 "ai_project/split.py" = ["B008"]
 "ai_project/stats.py" = ["B008"]
 "ai_project/train.py" = ["B008"]
+"ai_project/run_grid.py" = ["B008"]
 "ai_project/upload_processed.py" = ["B008"]
 
 [tool.ruff.lint.isort]
@@ -68,6 +69,7 @@ python_version = "3.11"
 strict = true
 warn_unused_ignores = false
 ignore_missing_imports = true
+disable_error_code = ["import-untyped"]
 files = ["ai_project"]
 exclude = [
     "(^|/)\\.git/",

@@ -1,4 +1,5 @@
 base: configs/simple_cnn.yaml
+baseline: configs/baseline.yaml
 
 grid:
   train.lr: [0.0003, 0.001, 0.003]

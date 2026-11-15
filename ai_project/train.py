@@ -15,7 +15,7 @@ import mlflow
 import numpy as np
 import torch
 import typer
-import yaml  # type: ignore[import-untyped]
+import yaml  # type: ignore
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score
 from torch import nn
 from torch.optim import Adam
@@ -23,7 +23,7 @@ from torch.optim import Adam
 from ai_project.config import DEFAULT_BUCKET
 from ai_project.modeling.networks import build_model
 from ai_project.processed_data import load_processed_version
-from ai_project.s3 import create_s3_client
+from ai_project.s3 import create_s3_client, object_exists
 from ai_project.torch_data import DataLoaders, build_dataloaders
 
 app = typer.Typer(help="Run one CPU training experiment from a YAML config.")
@@ -90,16 +90,34 @@ def _log_confusion_matrix(targets: list[int], predictions: list[int], path: Path
     plt.close(figure)
 
 
-def _upload_artifacts(root: Path, experiment_name: str, run_name: str, bucket: str) -> None:
+def _upload_artifacts(
+    root: Path,
+    experiment_name: str,
+    run_name: str,
+    bucket: str,
+    allow_overwrite: bool,
+) -> None:
     client = create_s3_client()
     prefix = f"models/{experiment_name}/{run_name}"
+    if object_exists(client, bucket, f"{prefix}/model.pt") and not allow_overwrite:
+        raise FileExistsError(
+            f"Training run already exists: s3://{bucket}/{prefix}/; "
+            "pass --allow-overwrite to replace it"
+        )
     for path in root.iterdir():
         if path.is_file():
             client.upload_file(str(path), bucket, f"{prefix}/{path.name}")
 
 
 @app.command()
-def main(config: Path = typer.Argument(..., exists=True, readable=True)) -> None:
+def main(
+    config: Path = typer.Argument(..., exists=True, readable=True),
+    allow_overwrite: bool = typer.Option(
+        False,
+        "--allow-overwrite",
+        help="Allow replacing an existing model run in S3.",
+    ),
+) -> None:
     """Train one model and log the best validation checkpoint."""
     config_payload: dict[str, Any] = yaml.safe_load(config.read_text(encoding="utf-8"))
     experiment_name = str(config_payload["experiment_name"])
@@ -185,7 +203,13 @@ def main(config: Path = typer.Argument(..., exists=True, readable=True)) -> None
                 }
             )
             mlflow.log_artifacts(str(artifact_root))
-            _upload_artifacts(artifact_root, experiment_name, run_name, DEFAULT_BUCKET)
+            _upload_artifacts(
+                artifact_root,
+                experiment_name,
+                run_name,
+                DEFAULT_BUCKET,
+                allow_overwrite,
+            )
     typer.echo(f"Completed {experiment_name}/{run_name}; best epoch={best_epoch}")
 
 
