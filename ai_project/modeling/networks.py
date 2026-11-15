@@ -8,7 +8,7 @@ import torch
 from torch import nn
 
 
-class LinearBaseline(nn.Module):  # type: ignore[misc]
+class LinearBaseline(nn.Module):
     """A single linear classifier over flattened 32x32 RGB pixels."""
 
     def __init__(self, input_size: int = 3 * 32 * 32, num_classes: int = 10) -> None:
@@ -19,7 +19,7 @@ class LinearBaseline(nn.Module):  # type: ignore[misc]
         return self.classifier(inputs.flatten(start_dim=1))
 
 
-class SimpleCNN(nn.Module):  # type: ignore[misc]
+class SimpleCNN(nn.Module):
     """A configurable 2–3 layer convolutional classifier for CIFAR-10."""
 
     def __init__(

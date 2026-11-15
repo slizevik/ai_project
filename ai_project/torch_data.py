@@ -25,7 +25,7 @@ def seed_everything(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-class CifarImageDataset(Dataset[tuple[torch.Tensor, int]]):  # type: ignore[misc]
+class CifarImageDataset(Dataset[tuple[torch.Tensor, int]]):
     """Read PNG images and labels from one processed annotation file."""
 
     def __init__(
