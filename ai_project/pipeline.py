@@ -38,6 +38,7 @@ def main(
         version=version,
         validation_size=validation_size,
         seed=seed,
+        workers=16,
     )
     typer.echo(f"Pipeline complete: {output}")
 
