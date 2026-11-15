@@ -15,15 +15,22 @@ app = typer.Typer()
 @app.command()
 def main(root: Path = typer.Option(INTERIM_DATA_DIR)) -> None:
     data = json.loads((root / "annotations" / "train.json").read_text(encoding="utf-8"))
-    arrays = [
-        np.asarray(Image.open(root / item["file_name"]), dtype=np.float64) / 255.0
-        for item in data["images"]
-    ]
-    pixels = np.concatenate([image.reshape(-1, 3) for image in arrays])
+    channel_sum = np.zeros(3, dtype=np.float64)
+    channel_sum_squares = np.zeros(3, dtype=np.float64)
+    pixel_count = 0
+    for item in data["images"]:
+        with Image.open(root / item["file_name"]) as image:
+            pixels = np.asarray(image.convert("RGB"), dtype=np.float32) / 255.0
+        flattened = pixels.reshape(-1, 3).astype(np.float64)
+        channel_sum += flattened.sum(axis=0)
+        channel_sum_squares += np.square(flattened).sum(axis=0)
+        pixel_count += flattened.shape[0]
+    mean = channel_sum / pixel_count
+    variance = channel_sum_squares / pixel_count - np.square(mean)
     stats = {
-        "mean": pixels.mean(axis=0).tolist(),
-        "std": pixels.std(axis=0).tolist(),
-        "num_images": len(arrays),
+        "mean": mean.tolist(),
+        "std": np.sqrt(np.maximum(variance, 0)).tolist(),
+        "num_images": len(data["images"]),
     }
     (root / "stats.json").write_text(json.dumps(stats, indent=2), encoding="utf-8")
 
