@@ -30,6 +30,7 @@ dev = [
     "mypy==1.15.0",
     "pre-commit==4.2.0",
     "ruff==0.11.13",
+    "types-pyyaml>=6.0",
 ]
 
 [tool.ruff]
@@ -56,6 +57,7 @@ extend-select = ["B", "E501", "I"]
 "ai_project/processed_data.py" = ["B008"]
 "ai_project/split.py" = ["B008"]
 "ai_project/stats.py" = ["B008"]
+"ai_project/train.py" = ["B008"]
 "ai_project/upload_processed.py" = ["B008"]
 
 [tool.ruff.lint.isort]
