@@ -20,6 +20,8 @@ services:
       timeout: 3s
       retries: 20
       start_period: 10s
+    networks:
+      - ai-project
 
   s3-init:
     image: amazon/aws-cli:2.17.59
@@ -36,7 +38,69 @@ services:
         aws --endpoint-url http://rustfs:9000
         s3api head-bucket --bucket ${S3_BUCKET:-ai-project} >/dev/null 2>&1
         || aws --endpoint-url http://rustfs:9000
-        s3api create-bucket --bucket ${S3_BUCKET:-ai-project}
+        s3api create-bucket --bucket ${S3_BUCKET:-ai-project};
+        aws --endpoint-url http://rustfs:9000
+        s3api head-bucket --bucket ${MLFLOW_S3_BUCKET:-mlflow} >/dev/null 2>&1
+        || aws --endpoint-url http://rustfs:9000
+        s3api create-bucket --bucket ${MLFLOW_S3_BUCKET:-mlflow}
+    networks:
+      - ai-project
+
+  postgres:
+    image: postgres:16.4
+    environment:
+      POSTGRES_DB: ${MLFLOW_DB_NAME:-mlflow}
+      POSTGRES_USER: ${MLFLOW_DB_USER:-mlflow}
+      POSTGRES_PASSWORD: ${MLFLOW_DB_PASSWORD:-mlflow}
+    volumes:
+      - mlflow-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${MLFLOW_DB_USER:-mlflow} -d ${MLFLOW_DB_NAME:-mlflow}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - ai-project
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v3.16.0
+    depends_on:
+      rustfs:
+        condition: service_healthy
+      s3-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5000:5000"
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-rustfsadmin}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-rustfsadmin}
+      AWS_DEFAULT_REGION: ${S3_REGION:-us-east-1}
+      MLFLOW_S3_ENDPOINT_URL: http://rustfs:9000
+      AWS_REQUEST_CHECKSUM_CALCULATION: ${AWS_REQUEST_CHECKSUM_CALCULATION:-when_required}
+      AWS_RESPONSE_CHECKSUM_VALIDATION: ${AWS_RESPONSE_CHECKSUM_VALIDATION:-when_required}
+      MLFLOW_SERVER_ALLOWED_HOSTS: mlflow:5000,localhost:*
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        pip install --no-cache-dir psycopg2-binary boto3 &&
+        mlflow server --host 0.0.0.0 --port 5000
+        --backend-store-uri postgresql+psycopg2://${MLFLOW_DB_USER:-mlflow}:${MLFLOW_DB_PASSWORD:-mlflow}@postgres:5432/${MLFLOW_DB_NAME:-mlflow}
+        --serve-artifacts --artifacts-destination s3://${MLFLOW_S3_BUCKET:-mlflow}/
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=2)\" "]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    networks:
+      - ai-project
 
 volumes:
   rustfs-data:
+  mlflow-postgres-data:
+
+networks:
+  ai-project:
