@@ -99,7 +99,12 @@ def _upload_artifacts(
 ) -> None:
     client = create_s3_client()
     prefix = f"models/{experiment_name}/{run_name}"
-    if object_exists(client, bucket, f"{prefix}/model.pt") and not allow_overwrite:
+    existing_keys = [
+        f"{prefix}/model.pt",
+        f"{prefix}/config.yaml",
+        f"{prefix}/metrics.json",
+    ]
+    if any(object_exists(client, bucket, key) for key in existing_keys) and not allow_overwrite:
         raise FileExistsError(
             f"Training run already exists: s3://{bucket}/{prefix}/; "
             "pass --allow-overwrite to replace it"
