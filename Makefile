@@ -26,7 +26,12 @@ infra-up:
 	docker compose up -d rustfs s3-init postgres mlflow
 
 experiments:
-	docker compose --profile training run --rm -e CONFIG=$(or $(CONFIG),configs/grid.yaml) training
+	@set -e; for index in 0 1 2 3 4 5 6; do \
+		echo "Starting experiment container $$index"; \
+		docker compose --profile training run --rm \
+			-e CONFIG=$(or $(CONFIG),configs/grid.yaml) \
+			-e GRID_INDEX=$$index training; \
+	done
 
 infra-down:
 	docker compose down

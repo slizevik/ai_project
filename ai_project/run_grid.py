@@ -48,7 +48,15 @@ def _run_config(payload: dict[str, Any], label: str) -> None:
 
 
 @app.command()
-def main(config: Path = typer.Argument(..., exists=True, readable=True)) -> None:
+def main(
+    config: Path = typer.Argument(..., exists=True, readable=True),
+    index: int | None = typer.Option(
+        None,
+        "--index",
+        min=0,
+        help="Run only one item: 0 is baseline, 1-6 are grid combinations.",
+    ),
+) -> None:
     """Run the baseline first, then every combination in the configured grid."""
     grid_payload = _load(config)
     config_root = config.parent
@@ -64,14 +72,19 @@ def main(config: Path = typer.Argument(..., exists=True, readable=True)) -> None
     base_path = resolve_config(str(grid_payload["base"]))
     baseline = _load(baseline_path)
     base = _load(base_path)
-    _run_config(baseline, "baseline")
+    if index is None or index == 0:
+        _run_config(baseline, "baseline")
+    elif index < 0:
+        raise typer.BadParameter("index must be non-negative")
 
     grid = grid_payload.get("grid")
     if not isinstance(grid, dict) or not grid:
         raise ValueError("grid.yaml must contain a non-empty grid mapping")
     keys = list(grid)
     values = [grid[key] for key in keys]
-    for index, combination in enumerate(itertools.product(*values), start=1):
+    for combination_index, combination in enumerate(itertools.product(*values), start=1):
+        if index is not None and index != combination_index:
+            continue
         experiment = copy.deepcopy(base)
         for key, value in zip(keys, combination, strict=True):
             _set_nested(experiment, key, value)
@@ -79,7 +92,7 @@ def main(config: Path = typer.Argument(..., exists=True, readable=True)) -> None
             f"cnn-lr{experiment['train']['lr']}-bs{experiment['train']['batch_size']}"
             f"-seed{experiment['seed']}"
         )
-        _run_config(experiment, f"grid-{index}")
+        _run_config(experiment, f"grid-{combination_index}")
 
 
 if __name__ == "__main__":
