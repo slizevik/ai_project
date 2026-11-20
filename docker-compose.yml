@@ -1,0 +1,133 @@
+services:
+  rustfs:
+    image: rustfs/rustfs:1.0.0
+    command: /data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-rustfsadmin}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-rustfsadmin}
+    volumes:
+      - rustfs-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/health/ready > /dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    networks:
+      - ai-project
+
+  s3-init:
+    image: amazon/aws-cli:2.17.59
+    depends_on:
+      rustfs:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-rustfsadmin}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-rustfsadmin}
+      AWS_DEFAULT_REGION: ${S3_REGION:-us-east-1}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        aws --endpoint-url http://rustfs:9000
+        s3api head-bucket --bucket ${S3_BUCKET:-ai-project} >/dev/null 2>&1
+        || aws --endpoint-url http://rustfs:9000
+        s3api create-bucket --bucket ${S3_BUCKET:-ai-project};
+        aws --endpoint-url http://rustfs:9000
+        s3api head-bucket --bucket ${MLFLOW_S3_BUCKET:-mlflow} >/dev/null 2>&1
+        || aws --endpoint-url http://rustfs:9000
+        s3api create-bucket --bucket ${MLFLOW_S3_BUCKET:-mlflow}
+    networks:
+      - ai-project
+
+  postgres:
+    image: postgres:16.4
+    environment:
+      POSTGRES_DB: ${MLFLOW_DB_NAME:-mlflow}
+      POSTGRES_USER: ${MLFLOW_DB_USER:-mlflow}
+      POSTGRES_PASSWORD: ${MLFLOW_DB_PASSWORD:-mlflow}
+    volumes:
+      - mlflow-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${MLFLOW_DB_USER:-mlflow} -d ${MLFLOW_DB_NAME:-mlflow}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - ai-project
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v3.16.0
+    depends_on:
+      rustfs:
+        condition: service_healthy
+      s3-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5000:5000"
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-rustfsadmin}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-rustfsadmin}
+      AWS_DEFAULT_REGION: ${S3_REGION:-us-east-1}
+      MLFLOW_S3_ENDPOINT_URL: http://rustfs:9000
+      AWS_REQUEST_CHECKSUM_CALCULATION: ${AWS_REQUEST_CHECKSUM_CALCULATION:-when_required}
+      AWS_RESPONSE_CHECKSUM_VALIDATION: ${AWS_RESPONSE_CHECKSUM_VALIDATION:-when_required}
+      MLFLOW_SERVER_ALLOWED_HOSTS: mlflow:5000,localhost:*
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        pip install --no-cache-dir psycopg2-binary boto3 &&
+        mlflow server --host 0.0.0.0 --port 5000
+        --backend-store-uri postgresql+psycopg2://${MLFLOW_DB_USER:-mlflow}:${MLFLOW_DB_PASSWORD:-mlflow}@postgres:5432/${MLFLOW_DB_NAME:-mlflow}
+        --serve-artifacts --artifacts-destination s3://${MLFLOW_S3_BUCKET:-mlflow}/
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=2)\" "]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    networks:
+      - ai-project
+
+  training:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: [training]
+    depends_on:
+      rustfs:
+        condition: service_healthy
+      s3-init:
+        condition: service_completed_successfully
+      mlflow:
+        condition: service_healthy
+    environment:
+      S3_ENDPOINT: http://rustfs:9000
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-ai-project}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-rustfsadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-rustfsadmin}
+      S3_ADDRESSING_STYLE: path
+      AWS_REQUEST_CHECKSUM_CALCULATION: ${AWS_REQUEST_CHECKSUM_CALCULATION:-when_required}
+      AWS_RESPONSE_CHECKSUM_VALIDATION: ${AWS_RESPONSE_CHECKSUM_VALIDATION:-when_required}
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      GRID_INDEX: ${GRID_INDEX:-}
+    command: ["/bin/sh", "-c", "if [ -n \"$${GRID_INDEX}\" ]; then python -m ai_project.run_grid $${CONFIG:-configs/grid.yaml} --index $${GRID_INDEX}; else python -m ai_project.run_grid $${CONFIG:-configs/grid.yaml}; fi"]
+    networks:
+      - ai-project
+
+volumes:
+  rustfs-data:
+  mlflow-postgres-data:
+
+networks:
+  ai-project:

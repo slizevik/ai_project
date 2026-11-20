@@ -10,8 +10,17 @@ authors = [{ name = "Student" }]
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
+    "boto3>=1.35",
     "loguru>=0.7",
+    "matplotlib>=3.9",
+    "mlflow>=3.6",
+    "numpy>=2.0",
+    "pillow>=10.0",
     "python-dotenv>=1.0",
+    "pyyaml>=6.0",
+    "scikit-learn>=1.5",
+    "torch>=2.7,<2.8",
+    "torchvision>=0.22,<0.23",
     "tqdm>=4.66",
     "typer==0.27.3",
 ]
@@ -21,17 +30,36 @@ dev = [
     "mypy==1.15.0",
     "pre-commit==4.2.0",
     "ruff==0.11.13",
+    "types-pyyaml>=6.0",
 ]
 
 [tool.ruff]
 line-length = 99
 src = ["ai_project"]
 
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
 [tool.ruff.lint]
 extend-select = ["B", "E501", "I"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
+"ai_project/convert.py" = ["B008"]
+"ai_project/download_raw.py" = ["B008"]
+"ai_project/pipeline.py" = ["B008"]
+"ai_project/processed_data.py" = ["B008"]
+"ai_project/split.py" = ["B008"]
+"ai_project/stats.py" = ["B008"]
+"ai_project/train.py" = ["B008"]
+"ai_project/run_grid.py" = ["B008"]
+"ai_project/upload_processed.py" = ["B008"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["ai_project"]
@@ -39,7 +67,9 @@ known-first-party = ["ai_project"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
+warn_unused_ignores = false
 ignore_missing_imports = true
+disable_error_code = ["import-untyped"]
 files = ["ai_project"]
 exclude = [
     "(^|/)\\.git/",
@@ -48,3 +78,8 @@ exclude = [
     "(^|/)\\.mypy_cache/",
     "(^|/)\\.ruff_cache/",
 ]
+
+[[tool.mypy.overrides]]
+module = ["ai_project.modeling.networks", "ai_project.torch_data"]
+disable_error_code = ["misc", "no-any-return"]
+
